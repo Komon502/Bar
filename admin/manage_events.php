@@ -36,86 +36,195 @@ if (isset($_GET['delete'])) {
             margin: 0;
             background-color: #f4f6f9;
             font-family: 'Kanit', sans-serif;
+            overflow: hidden;
+            /* Prevent full page scroll */
+            height: 100vh;
         }
 
         .admin-layout {
             display: flex;
-            min-height: 100vh;
+            height: 100vh;
         }
 
-        .content {
+        .main-content {
             flex: 1;
-            padding: 30px;
-            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            gap: 20px;
+            height: calc(100vh - 40px);
+            /* Padding compensation */
+            box-sizing: border-box;
         }
 
-        .header-flex {
+        /* --- Left Side: Table List --- */
+        .list-section {
+            flex: 6;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .list-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .btn-add {
-            background: #3498db;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-
-        .form-box {
-            display: none;
             background: #fff;
-            padding: 25px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-            margin-bottom: 20px;
         }
 
-        .form-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-
-        input,
-        textarea {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            box-sizing: border-box;
+        .table-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            background: #fff;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: #f8f9fa;
+            color: #555;
+            z-index: 10;
+            font-size: 0.9rem;
         }
 
         th,
         td {
-            padding: 15px;
+            padding: 12px 15px;
             text-align: left;
             border-bottom: 1px solid #eee;
         }
 
-        th {
-            background: #ecf0f1;
-            color: #555;
+        tr:hover {
+            background-color: #fcfcfc;
         }
 
+        /* --- Right Side: Add Form --- */
+        .form-section {
+            flex: 4;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-section h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+            display: inline-block;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.85rem;
+            color: #666;
+            font-weight: 500;
+        }
+
+        input,
+        textarea {
+            width: 100%;
+            padding: 8px 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 0.9rem;
+        }
+
+        input:focus,
+        textarea:focus {
+            border-color: #3498db;
+            outline: none;
+        }
+
+        .btn-add {
+            background: #3498db;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 1rem;
+            margin-top: 10px;
+            transition: background 0.3s;
+        }
+
+        .btn-add:hover {
+            background: #2980b9;
+        }
+
+        /* Compact Upload Box */
+        .upload-box {
+            width: 100%;
+            height: 100px;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            background: #fafafa;
+            flex-direction: row;
+            gap: 10px;
+        }
+
+        .upload-box:hover {
+            border-color: #3498db;
+            background: #f0f7fb;
+        }
+
+        .upload-box i {
+            font-size: 1.5rem;
+            color: #ccc;
+        }
+
+        .upload-box span {
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        .upload-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: none;
+        }
+
+        /* Progress Bar */
         .bar-bg {
             background: #eee;
             height: 6px;
             border-radius: 3px;
-            width: 100px;
+            width: 80px;
             margin-top: 5px;
         }
 
@@ -130,66 +239,138 @@ if (isset($_GET['delete'])) {
 <body>
     <div class="admin-layout">
         <?php require 'sidebar.php'; ?>
-        <div class="content">
-            <div class="header-flex">
-                <h2 style="color:#2c3e50; margin:0;">🎸 จัดการกิจกรรม</h2>
-                <button onclick="document.getElementById('addForm').style.display='block'" class="btn-add">+ เพิ่มงานใหม่</button>
+
+        <div class="main-content">
+            <!-- Left: Event List -->
+            <div class="list-section">
+                <div class="list-header">
+                    <h2 style="margin:0; font-size:1.4rem; color:#2c3e50;"><i class="fas fa-calendar-alt"></i>
+                        รายการกิจกรรม</h2>
+                    <span style="font-size:0.9rem; color:#888;">ทั้งหมด
+                        <?= $pdo->query("SELECT count(*) FROM events")->fetchColumn() ?> รายการ</span>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ชื่องาน</th>
+                                <th>วันที่</th>
+                                <th>Config</th>
+                                <th>ยอดขาย</th>
+                                <th>ลบ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php
+                            $stmt = $pdo->query("SELECT * FROM events ORDER BY event_date DESC");
+                            while ($row = $stmt->fetch()):
+                                $pct = ($row['max_tickets'] > 0) ? ($row['current_sold'] / $row['max_tickets']) * 100 : 0;
+                                ?>
+                                <tr>
+                                    <td>
+                                        <div style="font-weight:600; color:#333;"><?= $row['title'] ?></div>
+                                    </td>
+                                    <td style="font-size:0.9rem; color:#666;">
+                                        <?= date("d/m/y H:i", strtotime($row['event_date'])) ?>
+                                    </td>
+                                    <td>
+                                        <span
+                                            style="background:#f0f0f0; padding:2px 6px; border-radius:4px; font-size:0.8rem; font-weight:500;">
+                                            <?= $row['prefix'] ?>-<?= $row['start_num'] ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span
+                                                style="font-size:0.85rem;"><?= $row['current_sold'] ?>/<?= $row['max_tickets'] ?></span>
+                                        </div>
+                                        <div class="bar-bg">
+                                            <div class="bar-fill" style="width:<?= $pct ?>%"></div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <a href="?delete=<?= $row['id'] ?>" onclick="return confirm('ยืนยันการลบ?')"
+                                            style="color:#e74c3c; text-decoration:none;">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                            <?php endwhile; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <div id="addForm" class="form-box">
-                <h3 style="margin-top:0;">เพิ่มกิจกรรมใหม่</h3>
+            <!-- Right: Add Form -->
+            <div class="form-section">
+                <h3><i class="fas fa-plus-circle"></i> เพิ่มงานใหม่</h3>
                 <form method="post" enctype="multipart/form-data">
                     <div class="form-grid">
                         <div>
-                            <label>ชื่องาน</label><input type="text" name="title" required>
-                            <label>วันเวลา</label><input type="datetime-local" name="date" required>
-                            <label>ราคาบัตร</label><input type="number" name="price" required>
+                            <label>ชื่องาน</label>
+                            <input type="text" name="title" required placeholder="Ex. Jazz Night">
                         </div>
                         <div>
-                            <label>Prefix ตั๋ว (เช่น VIP)</label><input type="text" name="prefix" required>
-                            <label>เลขเริ่ม (เช่น 100)</label><input type="number" name="start_num" value="1">
-                            <label>จำนวนตั๋วสูงสุด</label><input type="number" name="max" value="100">
+                            <label>วันเวลา</label>
+                            <input type="datetime-local" name="date" required>
                         </div>
                     </div>
-                    <label>รายละเอียด</label><textarea name="desc"></textarea>
-                    <label>รูปภาพ</label><input type="file" name="event_img" accept="image/*" required>
-                    <button type="submit" name="add_event" class="btn-add" style="width:100%;">บันทึก</button>
+
+                    <div class="form-grid">
+                        <div>
+                            <label>ราคาบัตร</label>
+                            <input type="number" name="price" required placeholder="0.00">
+                        </div>
+                        <div>
+                            <label>จำนวนสูงสุด</label>
+                            <input type="number" name="max" value="100">
+                        </div>
+                    </div>
+
+                    <div class="form-grid">
+                        <div>
+                            <label>Prefix (เช่น VIP)</label>
+                            <input type="text" name="prefix" required placeholder="VIP">
+                        </div>
+                        <div>
+                            <label>Start Number</label>
+                            <input type="number" name="start_num" value="1">
+                        </div>
+                    </div>
+
+                    <label>รายละเอียด</label>
+                    <textarea name="desc" rows="3" placeholder="รายละเอียดของงาน..."></textarea>
+
+                    <label>รูปภาพปก</label>
+                    <label class="upload-box" for="promo_img">
+                        <input type="file" name="event_img" id="promo_img" accept="image/*" required
+                            onchange="previewImage(this)">
+                        <i class="fas fa-image"></i>
+                        <span>คลิกเลือกรูป..</span>
+                        <img id="preview" src="#">
+                    </label>
+
+                    <button type="submit" name="add_event" class="btn-add">บันทึกข้อมูล</button>
                 </form>
             </div>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>ชื่องาน</th>
-                        <th>วันที่</th>
-                        <th>Config ตั๋ว</th>
-                        <th>ยอดขาย</th>
-                        <th>จัดการ</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php
-                    $stmt = $pdo->query("SELECT * FROM events ORDER BY event_date DESC");
-                    while ($row = $stmt->fetch()):
-                        $pct = ($row['max_tickets'] > 0) ? ($row['current_sold'] / $row['max_tickets']) * 100 : 0;
-                    ?>
-                        <tr>
-                            <td><strong><?= $row['title'] ?></strong></td>
-                            <td><?= date("d/m/y H:i", strtotime($row['event_date'])) ?></td>
-                            <td><span style="background:#eee; padding:2px 5px; border-radius:4px; font-size:0.9rem;"><?= $row['prefix'] ?>-<?= $row['start_num'] ?></span></td>
-                            <td>
-                                <?= $row['current_sold'] ?> / <?= $row['max_tickets'] ?>
-                                <div class="bar-bg">
-                                    <div class="bar-fill" style="width:<?= $pct ?>%"></div>
-                                </div>
-                            </td>
-                            <td><a href="?delete=<?= $row['id'] ?>" onclick="return confirm('ลบ?')" style="color:#e74c3c;">ลบ</a></td>
-                        </tr>
-                    <?php endwhile; ?>
-                </tbody>
-            </table>
         </div>
     </div>
+
+    <script>
+        function previewImage(input) {
+            if (input.files && input.files[0]) {
+                var reader = new FileReader();
+                reader.onload = function (e) {
+                    document.getElementById('preview').src = e.target.result;
+                    document.getElementById('preview').style.display = 'block';
+                    // Hide icons/text
+                    document.querySelector('.upload-box i').style.display = 'none';
+                    document.querySelector('.upload-box span').style.display = 'none';
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+    </script>
 </body>
 
 </html>
