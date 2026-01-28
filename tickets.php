@@ -6,6 +6,7 @@
     <meta charset="UTF-8">
     <title>Tickets - จองบัตร</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         .ticket-grid {
             display: grid;

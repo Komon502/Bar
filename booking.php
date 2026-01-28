@@ -1,303 +1,250 @@
-<?php
-require 'db.php';
-if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
-    exit();
-}
+<?php 
+require 'db.php'; 
+if(!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
 
+$promptpay_id = "0812345678";
 $event_id = $_GET['event_id'] ?? 0;
+
+// 1. ดึงข้อมูล Event
 $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ?");
 $stmt->execute([$event_id]);
 $event = $stmt->fetch();
+if(!$event) header("Location: tickets.php");
 
-if (!$event)
-    header("Location: tickets.php");
+// 2. ดึงผังที่นั่ง (เรียงตาม แถว -> คอลัมน์)
+$tables = $pdo->query("SELECT * FROM tables ORDER BY row_idx ASC, col_idx ASC")->fetchAll();
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $name = $_POST['name'];
-    $phone = $_POST['phone'];
+// 3. หาขอบเขตผัง (Max Row, Max Col)
+$max_row = 0; $max_col = 0;
+foreach($tables as $t){
+    if($t['row_idx'] > $max_row) $max_row = $t['row_idx'];
+    if($t['col_idx'] > $max_col) $max_col = $t['col_idx'];
+}
+
+// 4. เช็คโต๊ะที่ไม่ว่าง
+$booked_stmt = $pdo->prepare("SELECT table_number FROM bookings WHERE event_id = ? AND status != 'cancelled'");
+$booked_stmt->execute([$event_id]);
+$booked_tables = $booked_stmt->fetchAll(PDO::FETCH_COLUMN);
+
+// --- บันทึกการจอง (PHP) ---
+if($_SERVER['REQUEST_METHOD'] == 'POST'){
+    $table_name = $_POST['selected_table'];
+    
+    // เช็คว่าโดนแย่งจองไหม
+    if(in_array($table_name, $booked_tables)){
+        echo "<script>alert('เสียใจด้วย! โต๊ะ $table_name เพิ่งถูกจองตัดหน้าไป'); window.location.reload();</script>";
+        exit();
+    }
+
+    $name = $_POST['name']; 
+    $phone = $_POST['phone']; 
+    $email = $_POST['email'];
     $qty = $_POST['quantity'];
+    
+    // [แก้ไขตรงนี้] : คิดราคาตามจำนวนบัตรเท่านั้น (ไม่บวกค่าโต๊ะ)
     $total = $qty * $event['ticket_price'];
 
-    // ตรวจสอบจำนวนบัตรว่าง
-    $available = $event['max_tickets'] - $event['current_sold'];
-    if ($qty > $available) {
-        echo "<script>alert('ขออภัย บัตรเหลือเพียง $available ใบ');</script>";
-    } else {
-        // อัปโหลดสลิป
-        $slip_path = "";
-        if (isset($_FILES['slip']) && $_FILES['slip']['error'] == 0) {
-            $ext = pathinfo($_FILES['slip']['name'], PATHINFO_EXTENSION);
-            $new_name = "slip_" . uniqid() . "." . $ext;
-            move_uploaded_file($_FILES['slip']['tmp_name'], "uploads/" . $new_name);
-            $slip_path = "uploads/" . $new_name;
-        }
-
-        // 1. สร้าง Booking
-        $sql = "INSERT INTO bookings (user_id, event_id, customer_name, customer_phone, quantity, total_price, payment_slip, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')";
-        $pdo->prepare($sql)->execute([$_SESSION['user_id'], $event_id, $name, $phone, $qty, $total, $slip_path]);
-        $booking_id = $pdo->lastInsertId();
-
-        // 2. เจนรหัสตั๋ว (Running Number)
-        // เริ่มนับจาก (start_num + current_sold)
-        $start_run = $event['start_num'] + $event['current_sold'];
-
-        for ($i = 0; $i < $qty; $i++) {
-            $run_number = $start_run + $i;
-            $code = $event['prefix'] . " " . str_pad($run_number, 3, '0', STR_PAD_LEFT); // เช่น MA 847
-
-            $pdo->prepare("INSERT INTO ticket_items (booking_id, ticket_code) VALUES (?, ?)")
-                ->execute([$booking_id, $code]);
-        }
-
-        // 3. อัปเดตยอดขายใน Events
-        $pdo->prepare("UPDATE events SET current_sold = current_sold + ? WHERE id = ?")
-            ->execute([$qty, $event_id]);
-
-        echo "<script>alert('จองสำเร็จ! กรุณารอแอดมินตรวจสอบสลิป'); window.location='my_bookings.php';</script>";
+    // Upload Slip
+    $slip_path = "";
+    if(isset($_FILES['slip']) && $_FILES['slip']['error'] == 0){
+        $ext = pathinfo($_FILES['slip']['name'], PATHINFO_EXTENSION);
+        $new_name = "slip_".uniqid().".".$ext;
+        if(!file_exists("uploads")) mkdir("uploads");
+        move_uploaded_file($_FILES['slip']['tmp_name'], "uploads/".$new_name);
+        $slip_path = "uploads/".$new_name;
     }
+
+    // Insert Booking
+    $sql = "INSERT INTO bookings (user_id, event_id, customer_name, customer_phone, customer_email, table_number, quantity, total_price, payment_slip, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')";
+    $pdo->prepare($sql)->execute([$_SESSION['user_id'], $event_id, $name, $phone, $email, $table_name, $qty, $total, $slip_path]);
+    
+    // ตัดสต็อกบัตร
+    $pdo->prepare("UPDATE events SET current_sold = current_sold + ? WHERE id = ?")->execute([$qty, $event_id]);
+
+    echo "<script>alert('จองสำเร็จ! กรุณารอตรวจสอบ'); window.location='my_bookings.php';</script>";
 }
 ?>
 <!DOCTYPE html>
 <html lang="th">
-
 <head>
-    <meta charset="UTF-8">
-    <title>Checkout</title>
+    <meta charset="UTF-8"><title>เลือกที่นั่ง - <?= htmlspecialchars($event['title']) ?></title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        body {
-            overflow: hidden;
-            /* Try to force no scroll if content fits */
-            height: 100vh;
+        .container { padding-top: 20px; padding-bottom: 150px; }
+        
+        /* Seat Map Styling */
+        .seat-map-wrapper { 
+            background: #282c34; padding: 40px 20px; border-radius: 15px; 
+            text-align: center; overflow-x: auto; margin-bottom: 20px;
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.5);
         }
+        .screen {
+            background: #fff; height: 10px; width: 60%; margin: 0 auto 50px; 
+            border-radius: 0 0 50px 50px; box-shadow: 0 5px 20px rgba(255,255,255,0.4); 
+            opacity: 0.8; font-size: 0.8rem; line-height: 10px; color: #000;
+        }
+        
+        /* Grid Dynamic */
+        .seat-grid { 
+            display: inline-grid; 
+            grid-template-columns: repeat(<?= $max_col ?>, 45px); 
+            grid-gap: 10px; justify-content: center;
+        }
+        
+        .seat-item {
+            width: 45px; height: 45px; border-radius: 8px; background: #3b404e; color: #fff;
+            display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: bold;
+            cursor: pointer; transition: 0.2s; position: relative; border-bottom: 3px solid #21252b;
+        }
+        
+        /* Status Colors */
+        .seat-item.available:hover { background: #3498db; transform: translateY(-3px); border-bottom-color: #2980b9; }
+        .seat-item.selected { background: #2ecc71; color: #fff; border-bottom-color: #27ae60; box-shadow: 0 0 15px #2ecc71; }
+        .seat-item.booked { background: #e74c3c; border-bottom-color: #c0392b; cursor: not-allowed; opacity: 0.3; }
+        
+        /* Zone Styles (แค่โชว์สี ไม่บวกราคา) */
+        .seat-item.vip { border: 2px solid #f1c40f; color: #f1c40f; }
+        .seat-item.vip.selected { color: #fff; background: #f1c40f; border-bottom-color: #d4ac0d; }
 
-        .container {
-            height: calc(100vh - 80px);
-            /* Adjust for navbar */
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            padding: 10px 20px;
+        .legend { display: flex; justify-content: center; gap: 15px; margin-top: 30px; color: #aaa; font-size: 0.9rem; flex-wrap: wrap; }
+        .dot { width: 12px; height: 12px; display: inline-block; border-radius: 50%; margin-right: 5px; }
+        
+        /* Checkout Bar */
+        .checkout-bar {
+            position: fixed; bottom: 0; left: 0; width: 100%; background: #fff;
+            padding: 20px; box-shadow: 0 -5px 20px rgba(0,0,0,0.1);
+            display: none; z-index: 100;
         }
-
-        h1 {
-            margin: 0 0 15px 0;
-            font-size: 1.8rem;
-            text-align: center;
-        }
-
-        .checkout-box {
-            display: flex;
-            gap: 30px;
-            background: #fff;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 5px 30px rgba(0, 0, 0, 0.08);
-            max-width: 900px;
-            margin: 0 auto;
-            width: 100%;
-        }
-
-        .form-group {
-            margin-bottom: 12px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 4px;
-            font-size: 0.9rem;
-            font-weight: 500;
-            color: #444;
-        }
-
-        input[type="text"],
-        input[type="tel"],
-        input[type="number"] {
-            width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            transition: border-color 0.3s;
-            box-sizing: border-box;
-            background: #fcfcfc;
-        }
-
-        input:focus {
-            border-color: #d35400;
-            outline: none;
-            background: #fff;
-        }
-
-        .upload-box {
-            width: 100%;
-            height: 120px;
-            border: 2px dashed #ddd;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            position: relative;
-            overflow: hidden;
-            transition: all 0.3s ease;
-            background: #fafafa;
-            flex-direction: column;
-            gap: 5px;
-            text-align: center;
-        }
-
-        .upload-box:hover {
-            border-color: #d35400;
-            background: #fff5f0;
-        }
-
-        .upload-box i {
-            font-size: 2rem;
-            color: #ccc;
-            transition: color 0.3s;
-        }
-
-        .upload-box:hover i {
-            color: #d35400;
-        }
-
-        .upload-box img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            position: absolute;
-            top: 0;
-            left: 0;
-            display: none;
-            border-radius: 12px;
-        }
-
-        .upload-text {
-            color: #888;
-            font-size: 0.8rem;
-        }
-
-        .qr-section {
-            text-align: center;
-            background: #fff;
-            padding: 20px;
-            border-radius: 15px;
-            border: 1px solid #eee;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-        }
-
-        .qr-img {
-            width: 180px;
-            height: 180px;
-            object-fit: contain;
-            margin: 15px 0;
-            border: 8px solid #f8f9fa;
-            border-radius: 12px;
-        }
-
-        .btn-main {
-            padding: 10px !important;
-            font-size: 1rem !important;
-            margin-top: 5px !important;
-        }
-
-        h3 {
-            margin: 0 0 10px 0;
-            font-size: 1.3rem;
-        }
+        .bar-content { max-width: 1000px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+        
+        @media(max-width: 768px){ .bar-content { flex-direction: column; align-items: stretch; } }
     </style>
 </head>
-
 <body>
     <?php require 'navbar.php'; ?>
+    
     <div class="container">
-        <h1>🛍️ ชำระเงิน</h1>
-        <div class="checkout-box">
-            <div style="flex:1;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <h3><?= htmlspecialchars($event['title']) ?></h3>
-                    <p style="margin:0;">ราคา: <strong>฿<?= number_format($event['ticket_price']) ?></strong></p>
-                </div>
-
-                <form method="post" enctype="multipart/form-data" id="bookingForm" style="margin-top:10px;">
-                    <div class="form-group">
-                        <label>ชื่อผู้จอง</label>
-                        <input type="text" name="name" required placeholder="กรอกชื่อ-นามสกุล">
-                    </div>
-
-                    <div class="form-group">
-                        <label>เบอร์โทรศัพท์</label>
-                        <input type="tel" name="phone" required placeholder="08x-xxx-xxxx">
-                    </div>
-
-                    <div class="form-group">
-                        <label>จำนวนบัตร</label>
-                        <input type="number" id="qty" name="quantity" min="1" max="10" value="1" required
-                            onchange="calcTotal()">
-                    </div>
-
-                    <hr style="border:0; border-top:1px solid #eee; margin:15px 0;">
-
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                        <span style="font-weight:500;">ยอดที่ต้องชำระ:</span>
-                        <span id="totalDisplay"
-                            style="color:var(--accent); font-size:1.4rem; font-weight:bold;">฿<?= number_format($event['ticket_price']) ?></span>
-                    </div>
-
-                    <div class="form-group">
-                        <label>แนบสลิปโอนเงิน</label>
-                        <label class="upload-box" for="slip">
-                            <input type="file" name="slip" id="slip" accept="image/*" required
-                                onchange="previewSlip(this)" style="display:none;">
-                            <i class="fas fa-cloud-upload-alt"></i>
-                            <span class="upload-text">คลิกอัปโหลดสลิป</span>
-                            <img id="preview" src="#" alt="Preview">
-                        </label>
-                    </div>
-
-                    <button type="submit" class="btn-main"
-                        style="width:100%; margin-top:5px; padding: 12px; font-size: 1rem;">ยืนยันการแจ้งโอน</button>
-                </form>
+        <h1 style="text-align:center;">🎟️ เลือกที่นั่ง (ฟรีเมื่อซื้อบัตร)</h1>
+        <p style="text-align:center; color:#666;">งาน: <?= htmlspecialchars($event['title']) ?></p>
+        
+        <div class="seat-map-wrapper">
+            <div class="screen">STAGE / เวที</div>
+            
+            <div class="seat-grid">
+                <?php
+                for($r = 1; $r <= $max_row; $r++){
+                    for($c = 1; $c <= $max_col; $c++){
+                        $found = null;
+                        foreach($tables as $t){ if($t['row_idx'] == $r && $t['col_idx'] == $c) { $found = $t; break; } }
+                        
+                        if($found){
+                            $tName = $found['table_name'];
+                            $isBooked = in_array($tName, $booked_tables);
+                            $status = $isBooked ? 'booked' : 'available';
+                            $vipClass = ($found['zone'] == 'VIP') ? 'vip' : '';
+                            
+                            // ส่งค่าชื่อโต๊ะไป แต่ไม่ส่งราคาเพิ่ม (เพราะฟรี)
+                            echo "<div class='seat-item $status $vipClass' 
+                                       onclick=\"selectSeat(this, '$tName', '$status')\"
+                                       title='Zone: {$found['zone']}'>
+                                    $tName
+                                  </div>";
+                        } else {
+                            echo "<div style='width:45px; height:45px;'></div>";
+                        }
+                    }
+                }
+                ?>
             </div>
 
-            <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
-                <div class="qr-section">
-                    <h4 style="margin:0;">สแกนเพื่อจ่ายเงิน</h4>
-                    <img src="public/QR-Code.png" class="qr-img">
-                    <p style="margin:5px 0 0; font-size:0.9rem;">ธ.กสิกรไทย 206-8-78628-5<br>บจก. ไนท์บาร์</p>
-                </div>
+            <div class="legend">
+                <span><span class="dot" style="background:#3b404e;"></span> ว่าง</span>
+                <span><span class="dot" style="background:#2ecc71;"></span> ที่เลือก</span>
+                <span><span class="dot" style="background:#e74c3c;"></span> จองแล้ว</span>
+                <span><span class="dot" style="border:1px solid #f1c40f;"></span> VIP Zone</span>
             </div>
         </div>
     </div>
+
+    <form method="post" enctype="multipart/form-data" class="checkout-bar" id="checkoutBar">
+        <div class="bar-content">
+            <div>
+                <h3 style="margin:0; color:#2c3e50;">โต๊ะ: <span id="selectedTableTxt" style="color:#e67e22;">-</span></h3>
+                <small style="color:#2ecc71;">(รวมในราคาบัตรแล้ว)</small>
+                <input type="hidden" name="selected_table" id="inputTable" required>
+            </div>
+
+            <div style="flex:1; display:flex; gap:10px; flex-wrap:wrap;">
+                <input type="text" name="name" required placeholder="ชื่อผู้จอง" style="padding:10px; border:1px solid #ddd; border-radius:5px; width:120px;">
+                <input type="tel" name="phone" required placeholder="เบอร์โทร" style="padding:10px; border:1px solid #ddd; border-radius:5px; width:120px;">
+                <input type="email" name="email" required placeholder="อีเมล" style="padding:10px; border:1px solid #ddd; border-radius:5px; width:150px;">
+                
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <span>จำนวนบัตร:</span>
+                    <input type="number" id="qty" name="quantity" min="1" value="1" onchange="calcTotal()" style="padding:10px; border:1px solid #ddd; border-radius:5px; width:60px;">
+                </div>
+                
+                <label style="cursor:pointer; background:#f8f9fa; padding:10px; border-radius:5px; font-size:0.9rem; border:1px solid #ddd;">
+                    <i class="fas fa-camera"></i> แนบสลิป
+                    <input type="file" name="slip" required accept="image/*" style="display:none;" onchange="alert('แนบสลิปเรียบร้อย')">
+                </label>
+            </div>
+
+            <div style="text-align:right;">
+                <div style="font-size:0.9rem; color:#888;">ราคารวม</div>
+                <div style="font-size:1.4rem; font-weight:bold; color:#2c3e50;" id="totalPrice">฿0</div>
+                
+                <button type="button" onclick="showQR()" style="background:none; border:none; color:#3498db; cursor:pointer; text-decoration:underline; font-size:0.9rem;">ดู QR Code</button>
+                <button type="submit" class="btn-main" style="padding:10px 20px; margin-left:10px; background:#e67e22; color:#fff; border:none; border-radius:5px; cursor:pointer;">ยืนยันจอง</button>
+            </div>
+        </div>
+    </form>
+
+    <div id="qrModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; align-items:center; justify-content:center;">
+        <div style="background:#fff; padding:30px; border-radius:15px; text-align:center; position:relative;">
+            <span onclick="document.getElementById('qrModal').style.display='none'" style="position:absolute; top:10px; right:15px; cursor:pointer; font-size:1.5rem;">&times;</span>
+            <h3>สแกนจ่ายเงิน</h3>
+            <img id="qrImg" src="" style="width:200px; margin:10px 0;">
+            <p>พร้อมเพย์: <?= $promptpay_id ?></p>
+        </div>
+    </div>
+
     <script>
-        const price = <?= $event['ticket_price'] ?>;
+        const ticketPrice = <?= $event['ticket_price'] ?>;
+        const ppID = "<?= $promptpay_id ?>";
+
+        function selectSeat(el, name, status) {
+            if(status === 'booked') return;
+
+            // ล้างการเลือกเก่า
+            document.querySelectorAll('.seat-item').forEach(s => s.classList.remove('selected'));
+            
+            // เลือกใหม่
+            el.classList.add('selected');
+
+            // อัปเดตข้อมูล (ไม่มีราคาบวกเพิ่ม)
+            document.getElementById('checkoutBar').style.display = 'block';
+            document.getElementById('selectedTableTxt').innerText = name;
+            document.getElementById('inputTable').value = name;
+            
+            calcTotal();
+        }
 
         function calcTotal() {
             let qty = document.getElementById('qty').value;
-            let total = qty * price;
-            document.getElementById('totalDisplay').innerText = '฿' + total.toLocaleString();
+            if(qty < 1) qty = 1;
+            
+            // [แก้ไขสูตรคำนวณ JS] : ราคาบัตร * จำนวน (โต๊ะฟรี)
+            let total = ticketPrice * qty;
+            
+            document.getElementById('totalPrice').innerText = '฿' + total.toLocaleString();
+            document.getElementById('qrImg').src = `https://promptpay.io/${ppID}/${total}.png`;
         }
 
-        function previewSlip(input) {
-            if (input.files && input.files[0]) {
-                var reader = new FileReader();
-                reader.onload = function (e) {
-                    document.getElementById('preview').src = e.target.result;
-                    document.getElementById('preview').style.display = 'block';
-                    document.querySelector('.upload-box i').style.display = 'none';
-                    document.querySelector('.upload-text').style.display = 'none';
-                }
-                reader.readAsDataURL(input.files[0]);
-            }
+        function showQR() {
+            document.getElementById('qrModal').style.display = 'flex';
         }
     </script>
 </body>
-
 </html>

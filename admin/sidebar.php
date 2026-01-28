@@ -93,6 +93,13 @@ if (isset($pdo)) {
         <a href="manage_promotions.php" class="<?= $current_page == 'manage_promotions.php' ? 'active' : '' ?>">
             <i class="fas fa-bullhorn" style="width:20px;"></i> โปรโมชั่น
         </a>
+        <a href="manage_tables.php" class="<?= $current_page == 'manage_tables.php' ? 'active' : '' ?>">
+            <i class="fas fa-chair" style="width:20px;"></i> จัดการโต๊ะ
+        </a>
+
+        <a href="history.php" class="<?= $current_page == 'history.php' ? 'active' : '' ?>">
+            <i class="fas fa-history" style="width:20px;"></i> ประวัติการจอง
+        </a>
         <a href="../index.php" target="_blank">
             <i class="fas fa-external-link-alt" style="width:20px;"></i> หน้าเว็บหลัก
         </a>
