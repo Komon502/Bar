@@ -125,6 +125,18 @@ if(isset($_POST['auto_gen'])){
         .seat[data-zone="VIP"] { background: #fff1f2; border-color: #fda4af; color: #e11d48; } /* ชมพูอ่อน */
         .seat[data-zone="Box"] { background: #ecfdf5; border-color: #6ee7b7; color: #059669; } /* เขียวอ่อน */
         
+        /* โต๊ะที่ถูกจอง - สีเขียว */
+        .seat.booked {
+            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+            border-color: #10b981;
+            color: #047857;
+            font-weight: 600;
+        }
+        .seat.booked:hover {
+            background: linear-gradient(135deg, #a7f3d0 0%, #6ee7b7 100%);
+            border-color: #059669;
+        }
+        
         /* ปิดใช้งาน */
         .seat.disabled { background: #f1f5f9; color: #cbd5e1; border-color: #e2e8f0; cursor: not-allowed; }
         .seat.disabled:hover { transform: none; box-shadow: none; border-color: #e2e8f0; color: #cbd5e1; }
@@ -218,7 +230,26 @@ if(isset($_POST['auto_gen'])){
                 
                 <div class="seat-grid">
                     <?php
+                    // ดึงโต๊ะทั้งหมด
                     $tables = $pdo->query("SELECT * FROM tables ORDER BY row_idx, col_idx")->fetchAll();
+                    
+                    // ดึงข้อมูลการจองที่ยังไม่หมดอายุ (วันนี้และในอนาคต + status confirmed)
+                    $today = date('Y-m-d');
+                    $reservationStmt = $pdo->prepare("
+                        SELECT r.*, u.username 
+                        FROM reservations r 
+                        LEFT JOIN users u ON r.user_id = u.id 
+                        WHERE r.booking_date >= ? AND r.status = 'confirmed'
+                    ");
+                    $reservationStmt->execute([$today]);
+                    $reservations = $reservationStmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    // สร้าง array แมพโต๊ะกับการจอง
+                    $tableBookings = [];
+                    foreach ($reservations as $res) {
+                        $tableBookings[$res['table_number']] = $res;
+                    }
+                    
                     if(count($tables) > 0){
                         $maxRow = 0; foreach($tables as $t) { if($t['row_idx'] > $maxRow) $maxRow = $t['row_idx']; }
 
@@ -233,11 +264,24 @@ if(isset($_POST['auto_gen'])){
 
                                     if($found){
                                         $statusClass = ($found['status'] == 'maintenance') ? 'disabled' : '';
-                                        echo "<div class='seat {$statusClass}' 
-                                                   data-zone='{$found['zone']}'
-                                                   onclick=\"openEditModal({$found['id']}, '{$found['table_name']}', '{$found['price_modifier']}', '{$found['status']}', '{$found['zone']}')\">
-                                              {$found['table_name']}
-                                              </div>";
+                                        $isBooked = isset($tableBookings[$found['table_name']]);
+                                        
+                                        if ($isBooked) {
+                                            $statusClass .= ' booked';
+                                            $booking = $tableBookings[$found['table_name']];
+                                            $bookingData = json_encode($booking, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+                                            echo "<div class='seat {$statusClass}' 
+                                                       data-zone='{$found['zone']}'
+                                                       onclick='openBookingModal({$bookingData})'>
+                                                  {$found['table_name']}
+                                                  </div>";
+                                        } else {
+                                            echo "<div class='seat {$statusClass}' 
+                                                       data-zone='{$found['zone']}'
+                                                       onclick=\"openEditModal({$found['id']}, '{$found['table_name']}', '{$found['price_modifier']}', '{$found['status']}', '{$found['zone']}')\">
+                                                  {$found['table_name']}
+                                                  </div>";
+                                        }
                                     } else {
                                         echo "<div style='width:48px; height:48px;'></div>";
                                     }
@@ -253,8 +297,83 @@ if(isset($_POST['auto_gen'])){
                     <div class="legend-item"><div class="dot" style="background:#fff; border:1px solid #cbd5e1;"></div> ปกติ</div>
                     <div class="legend-item"><div class="dot" style="background:#ffe4e6; border:1px solid #fda4af;"></div> VIP</div>
                     <div class="legend-item"><div class="dot" style="background:#d1fae5; border:1px solid #6ee7b7;"></div> Box</div>
+                    <div class="legend-item"><div class="dot" style="background:linear-gradient(135deg, #d1fae5, #a7f3d0); border:1px solid #10b981;"></div> ถูกจอง</div>
                     <div class="legend-item"><div class="dot" style="background:#f1f5f9;"></div> ปิดปรับปรุง</div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Booking Information Modal -->
+    <div id="bookingModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <h3>📋 ข้อมูลการจอง <span id="bookingTableName" style="color:var(--success);"></span></h3>
+                </div>
+                <button class="close-btn" onclick="closeModal('bookingModal')"><i class="fas fa-times"></i></button>
+            </div>
+            
+            <div style="padding: 10px 0;">
+                <div class="form-group">
+                    <label class="form-label">ชื่อผู้จอง</label>
+                    <div style="padding: 12px 16px; background: #f8fafc; border-radius: 12px; font-weight: 500; color: #1e293b;">
+                        <i class="fas fa-user" style="color: #64748b; margin-right: 8px;"></i>
+                        <span id="bookingCustomerName"></span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">เบอร์โทรศัพท์</label>
+                    <div style="padding: 12px 16px; background: #f8fafc; border-radius: 12px; font-weight: 500; color: #1e293b;">
+                        <i class="fas fa-phone" style="color: #64748b; margin-right: 8px;"></i>
+                        <span id="bookingPhone"></span>
+                    </div>
+                </div>
+
+                <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <label class="form-label">วันที่จอง</label>
+                        <div style="padding: 12px 16px; background: #f8fafc; border-radius: 12px; font-weight: 500; color: #1e293b;">
+                            <i class="fas fa-calendar" style="color: #64748b; margin-right: 8px;"></i>
+                            <span id="bookingDate"></span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label">เวลา</label>
+                        <div style="padding: 12px 16px; background: #f8fafc; border-radius: 12px; font-weight: 500; color: #1e293b;">
+                            <i class="fas fa-clock" style="color: #64748b; margin-right: 8px;"></i>
+                            <span id="bookingTime"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">จำนวนผู้เข้าร่วม</label>
+                    <div style="padding: 12px 16px; background: #f8fafc; border-radius: 12px; font-weight: 500; color: #1e293b;">
+                        <i class="fas fa-users" style="color: #64748b; margin-right: 8px;"></i>
+                        <span id="bookingGuests"></span> คน
+                    </div>
+                </div>
+
+                <div class="form-group" id="bookingUsernameGroup" style="display: none;">
+                    <label class="form-label">Username ผู้จอง</label>
+                    <div style="padding: 12px 16px; background: #eef2ff; border-radius: 12px; font-weight: 500; color: #4f46e5;">
+                        <i class="fas fa-at" style="margin-right: 8px;"></i>
+                        <span id="bookingUsername"></span>
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px; padding: 15px; background: #d1fae5; border-radius: 12px; border-left: 4px solid #10b981;">
+                    <div style="display: flex; align-items: center; gap: 8px; color: #047857; font-weight: 500;">
+                        <i class="fas fa-check-circle"></i>
+                        <span>สถานะ: ยืนยันแล้ว</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button onclick="closeModal('bookingModal')" class="btn-save" style="background: #64748b;">ปิด</button>
             </div>
         </div>
     </div>
@@ -373,6 +492,35 @@ if(isset($_POST['auto_gen'])){
             if(zone === 'VIP') document.getElementById('zone_vip').checked = true;
             else if(zone === 'Box') document.getElementById('zone_box').checked = true;
             else document.getElementById('zone_std').checked = true;
+        }
+
+        function openBookingModal(booking) {
+            document.getElementById('bookingModal').style.display = 'flex';
+            document.getElementById('bookingTableName').innerText = booking.table_number;
+            document.getElementById('bookingCustomerName').innerText = booking.customer_name;
+            document.getElementById('bookingPhone').innerText = booking.customer_phone;
+            
+            // Format date
+            const date = new Date(booking.booking_date);
+            const formattedDate = date.toLocaleDateString('th-TH', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            document.getElementById('bookingDate').innerText = formattedDate;
+            
+            // Format time
+            document.getElementById('bookingTime').innerText = booking.booking_time.substring(0, 5) + ' น.';
+            
+            document.getElementById('bookingGuests').innerText = booking.guest_count;
+            
+            // Show username if available
+            if (booking.username) {
+                document.getElementById('bookingUsername').innerText = booking.username;
+                document.getElementById('bookingUsernameGroup').style.display = 'block';
+            } else {
+                document.getElementById('bookingUsernameGroup').style.display = 'none';
+            }
         }
 
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }

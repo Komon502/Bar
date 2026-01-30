@@ -48,6 +48,135 @@
         .modal-title { margin: 0 0 10px; color: #e67e22; font-size: 1.5rem; border-bottom: 2px solid #eee; padding-bottom: 10px; }
         .modal-desc { color: #555; line-height: 1.6; font-size: 1rem; white-space: pre-wrap; }
 
+        /* Carousel Styles */
+        .carousel-wrapper-outer {
+            position: relative;
+            width: 100%;
+            margin-bottom: 30px;
+        }
+
+        .carousel-container {
+            overflow: hidden;
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .carousel-wrapper {
+            display: flex;
+            transition: transform 0.6s ease-in-out;
+        }
+
+        .carousel-item {
+            min-width: 100%;
+            box-sizing: border-box;
+            padding: 0 10px;
+        }
+
+        /* แก้ไข: ให้การ์ดมีขนาดเท่ากัน */
+        .carousel-item .card {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .carousel-item .card-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .carousel-item .card-content p {
+            flex: 1;
+        }
+
+        /* Arrow Navigation - ไม่เด่น โปร่งแสง */
+        .carousel-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.3);
+            color: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            width: 45px;
+            height: 70px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.4rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+        }
+
+        .carousel-arrow:hover {
+            background: rgba(230, 126, 34, 0.9);
+            color: white;
+            border-color: transparent;
+            box-shadow: 0 4px 12px rgba(230, 126, 34, 0.3);
+            transform: translateY(-50%) scale(1.05);
+        }
+
+        .carousel-arrow:active {
+            transform: translateY(-50%) scale(0.95);
+        }
+
+        .carousel-arrow.prev {
+            left: 0;
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+        }
+
+        .carousel-arrow.next {
+            right: 0;
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+
+        .carousel-dots {
+            text-align: center;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ddd;
+            margin: 0 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .dot.active {
+            background: #e67e22;
+            transform: scale(1.2);
+        }
+
+        @media (min-width: 768px) {
+            .carousel-item {
+                min-width: 50%;
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .carousel-item {
+                min-width: 33.333%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .carousel-arrow {
+                width: 40px;
+                height: 60px;
+                font-size: 1.2rem;
+            }
+        }
         /* การ์ดโปรโมชั่น */
         .promo-card { cursor: pointer; transition: transform 0.3s; }
         .promo-card:hover { transform: translateY(-7px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
@@ -65,37 +194,62 @@
     </div>
 
     <div class="container">
-        
         <h2 class="section-title">🔥 โปรโมชั่นแนะนำ</h2>
-        <div class="grid-box">
-            <?php
-            // ดึงข้อมูลจากตาราง promotions
-            $stmt = $pdo->query("SELECT * FROM promotions ORDER BY id DESC");
-            
-            // ถ้าไม่มีข้อมูลให้แสดงข้อความ
-            if ($stmt->rowCount() == 0) {
-                echo "<p style='color:#999; text-align:center; width:100%; grid-column:1/-1;'>ยังไม่มีโปรโมชั่นขณะนี้</p>";
-            }
+    </div>
 
-            while ($row = $stmt->fetch()) {
-                // เช็ค path รูปภาพ
-                $img = $row['image_url'] ? $row['image_url'] : 'https://via.placeholder.com/500x300?text=No+Image';
-                
-                // เตรียมข้อมูลสำหรับส่งเข้า JS Popup (ป้องกันอักขระพิเศษ)
-                $jsTitle = htmlspecialchars($row['title'], ENT_QUOTES);
-                $jsDesc = htmlspecialchars($row['details'], ENT_QUOTES);
-                $jsImg = $img;
+    <?php
+    // ดึงข้อมูลจากตาราง promotions
+    $stmt = $pdo->query("SELECT * FROM promotions ORDER BY id DESC");
+    $promotions = $stmt->fetchAll();
+    ?>
 
-                echo '<div class="card promo-card" onclick="openModal(\''.$jsImg.'\', \''.$jsTitle.'\', \''.$jsDesc.'\')">';
-                echo '<img src="' . $img . '" style="width:100%; height:200px; object-fit:cover;">';
-                echo '<div class="card-content">';
-                echo '<span style="background:#e67e22; color:#fff; padding:3px 8px; border-radius:4px; font-size:0.8rem;">Promotion</span>';
-                echo '<h3 style="margin:10px 0 5px;">' . htmlspecialchars($row['title']) . '</h3>';
-                echo '<p style="color:#666; font-size:0.9rem;">' . mb_strimwidth(htmlspecialchars($row['details']), 0, 80, '...') . '</p>';
-                echo '</div></div>';
-            }
-            ?>
+    <!-- Carousel อยู่นอก container เพื่อให้ปุ่มชิดขอบจอ -->
+    <div class="carousel-wrapper-outer">
+        <button class="carousel-arrow prev" onclick="prevSlide()">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        
+        <div class="carousel-container">
+            <div class="carousel-wrapper" id="promoCarousel">
+                <?php
+                if (count($promotions) > 0) {
+                    foreach ($promotions as $row) {
+                        // เช็ค path รูปภาพ
+                        $img = $row['image_url'] ? $row['image_url'] : 'https://via.placeholder.com/500x300?text=No+Image';
+                        
+                        // เตรียมข้อมูลสำหรับ JavaScript - ใช้ json_encode เพื่อป้องกัน XSS
+                        $jsData = json_encode([
+                            'img' => $img,
+                            'title' => $row['title'],
+                            'desc' => $row['details']
+                        ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+
+                        echo '<div class="carousel-item">';
+                        echo '<div class="card promo-card" onclick=\'openModalSafe(' . $jsData . ')\'>';
+                        echo '<img src="' . htmlspecialchars($img, ENT_QUOTES, 'UTF-8') . '" style="width:100%; height:200px; object-fit:cover;">';
+                        echo '<div class="card-content">';
+                        echo '<span style="background:#e67e22; color:#fff; padding:3px 8px; border-radius:4px; font-size:0.8rem;">Promotion</span>';
+                        echo '<h3 style="margin:10px 0 5px;">' . htmlspecialchars($row['title'], ENT_QUOTES, 'UTF-8') . '</h3>';
+                        echo '<p style="color:#666; font-size:0.9rem;">' . mb_strimwidth(htmlspecialchars($row['details'], ENT_QUOTES, 'UTF-8'), 0, 80, '...') . '</p>';
+                        echo '</div></div>';
+                        echo '</div>';
+                    }
+                } else {
+                    echo '<p style="text-align:center; color:#999; padding:40px 0; width:100%;">ยังไม่มีโปรโมชั่นขณะนี้</p>';
+                }
+                ?>
+            </div>
         </div>
+        
+        <button class="carousel-arrow next" onclick="nextSlideManual()">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+        
+        <div class="carousel-dots" id="carouselDots"></div>
+    </div>
+
+    <div class="container">
+        
 
         <h2 class="section-title" style="margin-top:50px;">🎸 คอนเสิร์ตเร็วๆ นี้</h2>
         <div class="grid-box">
@@ -139,24 +293,99 @@
     </div>
 
     <script>
-        function openModal(img, title, desc) {
-            document.getElementById('modalImg').src = img;
-            document.getElementById('modalTitle').innerText = title;
-            document.getElementById('modalDesc').innerText = desc;
+        // ฟังก์ชันใหม่ที่รับ JSON object แทนการรับ string แยก
+        function openModalSafe(data) {
+            document.getElementById('modalImg').src = data.img;
+            document.getElementById('modalTitle').textContent = data.title;
+            document.getElementById('modalDesc').textContent = data.desc;
             
             document.getElementById('promoModal').style.display = 'flex';
-            document.body.style.overflow = 'hidden'; // ล็อก Scroll
+            document.body.style.overflow = 'hidden';
         }
 
         function closeModal() {
             document.getElementById('promoModal').style.display = 'none';
-            document.body.style.overflow = 'auto'; // ปลดล็อก Scroll
+            document.body.style.overflow = 'auto';
         }
 
         function closeModalOutside(e) {
             if (e.target == document.getElementById('promoModal')) {
                 closeModal();
             }
+        }
+
+        // Carousel Auto-Scroll
+        const carousel = document.getElementById('promoCarousel');
+        const dotsContainer = document.getElementById('carouselDots');
+        
+        if (carousel) {
+            const items = carousel.querySelectorAll('.carousel-item');
+            const totalItems = items.length;
+            let currentIndex = 0;
+            let autoScrollInterval;
+
+            // สร้าง dots
+            items.forEach((_, index) => {
+                const dot = document.createElement('span');
+                dot.className = 'dot' + (index === 0 ? ' active' : '');
+                dot.onclick = () => goToSlide(index);
+                dotsContainer.appendChild(dot);
+            });
+
+            const dots = dotsContainer.querySelectorAll('.dot');
+
+            function updateCarousel() {
+                // คำนวณ offset สำหรับหน้าจอขนาดต่างๆ
+                let itemsPerView = 1;
+                if (window.innerWidth >= 1024) itemsPerView = 3;
+                else if (window.innerWidth >= 768) itemsPerView = 2;
+
+                const offset = -(currentIndex * (100 / itemsPerView));
+                carousel.style.transform = `translateX(${offset}%)`;
+
+                // Update dots
+                dots.forEach((dot, index) => {
+                    dot.classList.toggle('active', index === currentIndex);
+                });
+            }
+
+            function nextSlide() {
+                currentIndex = (currentIndex + 1) % totalItems;
+                updateCarousel();
+            }
+
+            function prevSlide() {
+                currentIndex = (currentIndex - 1 + totalItems) % totalItems;
+                updateCarousel();
+                resetAutoScroll();
+            }
+
+            function nextSlideManual() {
+                currentIndex = (currentIndex + 1) % totalItems;
+                updateCarousel();
+                resetAutoScroll();
+            }
+
+            function goToSlide(index) {
+                currentIndex = index;
+                updateCarousel();
+                resetAutoScroll();
+            }
+
+            function resetAutoScroll() {
+                clearInterval(autoScrollInterval);
+                autoScrollInterval = setInterval(nextSlide, 5000); // เลื่อนทุก 5 วินาที
+            }
+
+            // เริ่ม auto-scroll
+            resetAutoScroll();
+
+            // Update on window resize
+            window.addEventListener('resize', updateCarousel);
+
+            // หยุดเมื่อ hover (optional)
+            carousel.addEventListener('mouseenter', () => clearInterval(autoScrollInterval));
+            carousel.addEventListener('mouseleave', resetAutoScroll);
         }
     </script>
 </body>

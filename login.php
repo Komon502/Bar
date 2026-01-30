@@ -1,26 +1,57 @@
 <?php
 require 'db.php';
+require 'rate_limiter.php';
+
 // ถ้าล็อกอินแล้วให้เด้งไปหน้าแรกเลย
 if (isset($_SESSION['user_id'])) {
     header("Location: index.php");
     exit();
 }
 
+$rateLimiter = new RateLimiter($pdo);
+$user_ip = $_SERVER['REMOTE_ADDR'];
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
-    $stmt->execute([$_POST['username']]);
-    $user = $stmt->fetch();
-
-    if ($user && password_verify($_POST['password'], $user['password'])) {
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['username'] = $user['username'];
-        $_SESSION['role'] = $user['role'];
-
-        if ($user['role'] == 'admin') header("Location: admin/index.php");
-        else header("Location: index.php");
-        exit();
+    
+    // Check if IP is blocked
+    if ($rateLimiter->isBlocked($user_ip)) {
+        $remaining = $rateLimiter->getRemainingTime($user_ip);
+        $minutes = ceil($remaining / 60);
+        $error = "คุณพยายามล็อกอินผิดหลายครั้ง กรุณารอ {$minutes} นาที";
     } else {
-        $error = "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง";
+        $username = $_POST['username'];
+        $password = $_POST['password'];
+        
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
+        $stmt->execute([$username]);
+        $user = $stmt->fetch();
+
+        if ($user && password_verify($password, $user['password'])) {
+            // Login successful - clear attempts
+            $rateLimiter->clearAttempts($user_ip);
+            
+            // Regenerate session ID (prevent session fixation)
+            session_regenerate_id(true);
+            
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['role'] = $user['role'];
+            
+            // Log successful login
+            error_log("Successful login: {$username} from {$user_ip}");
+
+            if ($user['role'] == 'admin') header("Location: admin/index.php");
+            else header("Location: index.php");
+            exit();
+        } else {
+            // Record failed attempt
+            $rateLimiter->recordAttempt($user_ip, $username);
+            
+            // Log failed login
+            error_log("Failed login attempt: {$username} from {$user_ip}");
+            
+            $error = "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง";
+        }
     }
 }
 ?>
@@ -42,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             <?php if (isset($error)): ?>
                 <div style="background: #fadbd8; color: #721c24; padding: 10px; border-radius: 5px; margin-bottom: 15px; text-align: center;">
-                    <?= $error ?>
+                    <?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?>
                 </div>
             <?php endif; ?>
 

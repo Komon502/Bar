@@ -1,5 +1,6 @@
 <?php 
-require 'db.php'; 
+require 'db.php';
+require 'upload_helper.php';
 if(!isset($_SESSION['user_id'])) { header("Location: login.php"); exit(); }
 
 $promptpay_id = "0812345678";
@@ -21,47 +22,81 @@ foreach($tables as $t){
     if($t['col_idx'] > $max_col) $max_col = $t['col_idx'];
 }
 
-// 4. เช็คโต๊ะที่ไม่ว่าง
+// 4. เช็คโต๊ะที่ไม่ว่าง (จะเช็คอีกครั้งใน transaction)
 $booked_stmt = $pdo->prepare("SELECT table_number FROM bookings WHERE event_id = ? AND status != 'cancelled'");
 $booked_stmt->execute([$event_id]);
 $booked_tables = $booked_stmt->fetchAll(PDO::FETCH_COLUMN);
 
-// --- บันทึกการจอง (PHP) ---
+// --- บันทึกการจอง (PHP) - แก้ไขเพิ่ม Security ---
 if($_SERVER['REQUEST_METHOD'] == 'POST'){
     $table_name = $_POST['selected_table'];
     
-    // เช็คว่าโดนแย่งจองไหม
-    if(in_array($table_name, $booked_tables)){
-        echo "<script>alert('เสียใจด้วย! โต๊ะ $table_name เพิ่งถูกจองตัดหน้าไป'); window.location.reload();</script>";
-        exit();
+    try {
+        // เริ่ม transaction เพื่อป้องกัน race condition
+        $pdo->beginTransaction();
+        
+        // 1. Lock และเช็คว่าโต๊ะว่างหรือไม่
+        $check_stmt = $pdo->prepare(
+            "SELECT COUNT(*) as cnt FROM bookings 
+             WHERE event_id = ? AND table_number = ? AND status != 'cancelled' 
+             FOR UPDATE"
+        );
+        $check_stmt->execute([$event_id, $table_name]);
+        $count = $check_stmt->fetch()['cnt'];
+        
+        if($count > 0){
+            $pdo->rollBack();
+            echo "<script>alert('เสียใจด้วย! โต๊ะ $table_name เพิ่งถูกจองไป'); window.location.reload();</script>";
+            exit();
+        }
+        
+        // 2. เช็คจำนวนตั๋วคงเหลือ
+        $event_check = $pdo->prepare("SELECT current_sold, max_tickets FROM events WHERE id = ? FOR UPDATE");
+        $event_check->execute([$event_id]);
+        $evt = $event_check->fetch();
+        
+        $qty = (int)$_POST['quantity'];
+        if($evt['current_sold'] + $qty > $evt['max_tickets']){
+            $pdo->rollBack();
+            $remaining = $evt['max_tickets'] - $evt['current_sold'];
+            echo "<script>alert('บัตรเหลือเพียง {$remaining} ใบ'); history.back();</script>";
+            exit();
+        }
+        
+        // 3. Upload slip - ใช้ SecureUpload
+        $slip_path = "";
+        if(isset($_FILES['slip'])){
+            $upload_result = SecureUpload::uploadImage($_FILES['slip'], 'uploads/', 'slip');
+            if(!$upload_result['success']){
+                $pdo->rollBack();
+                echo "<script>alert('ข้อผิดพลาด: {$upload_result['error']}'); history.back();</script>";
+                exit();
+            }
+            $slip_path = $upload_result['path'];
+        }
+        
+        // 4. Insert booking
+        $name = $_POST['name']; 
+        $phone = $_POST['phone']; 
+        $email = $_POST['email'];
+        $total = $qty * $event['ticket_price'];
+        
+        $sql = "INSERT INTO bookings (user_id, event_id, customer_name, customer_phone, customer_email, table_number, quantity, total_price, payment_slip, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')";
+        $pdo->prepare($sql)->execute([$_SESSION['user_id'], $event_id, $name, $phone, $email, $table_name, $qty, $total, $slip_path]);
+        
+        // 5. Update ticket count
+        $pdo->prepare("UPDATE events SET current_sold = current_sold + ? WHERE id = ?")->execute([$qty, $event_id]);
+        
+        // Commit transaction
+        $pdo->commit();
+        
+        echo "<script>alert('จองสำเร็จ! กรุณารอตรวจสอบ'); window.location='my_bookings.php';</script>";
+        
+    } catch(Exception $e) {
+        $pdo->rollBack();
+        error_log("Booking error: " . $e->getMessage());
+        echo "<script>alert('เกิดข้อผิดพลาด กรุณาลองใหม่'); history.back();</script>";
     }
-
-    $name = $_POST['name']; 
-    $phone = $_POST['phone']; 
-    $email = $_POST['email'];
-    $qty = $_POST['quantity'];
-    
-    // [แก้ไขตรงนี้] : คิดราคาตามจำนวนบัตรเท่านั้น (ไม่บวกค่าโต๊ะ)
-    $total = $qty * $event['ticket_price'];
-
-    // Upload Slip
-    $slip_path = "";
-    if(isset($_FILES['slip']) && $_FILES['slip']['error'] == 0){
-        $ext = pathinfo($_FILES['slip']['name'], PATHINFO_EXTENSION);
-        $new_name = "slip_".uniqid().".".$ext;
-        if(!file_exists("uploads")) mkdir("uploads");
-        move_uploaded_file($_FILES['slip']['tmp_name'], "uploads/".$new_name);
-        $slip_path = "uploads/".$new_name;
-    }
-
-    // Insert Booking
-    $sql = "INSERT INTO bookings (user_id, event_id, customer_name, customer_phone, customer_email, table_number, quantity, total_price, payment_slip, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')";
-    $pdo->prepare($sql)->execute([$_SESSION['user_id'], $event_id, $name, $phone, $email, $table_name, $qty, $total, $slip_path]);
-    
-    // ตัดสต็อกบัตร
-    $pdo->prepare("UPDATE events SET current_sold = current_sold + ? WHERE id = ?")->execute([$qty, $event_id]);
-
-    echo "<script>alert('จองสำเร็จ! กรุณารอตรวจสอบ'); window.location='my_bookings.php';</script>";
 }
 ?>
 <!DOCTYPE html>

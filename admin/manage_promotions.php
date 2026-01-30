@@ -1,24 +1,77 @@
 <?php
 require '../db.php';
+require '../upload_helper.php';
+
 if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') {
     header("Location: ../login.php");
     exit();
 }
 
+// เพิ่มโปรโมชั่นใหม่
 if (isset($_POST['add_promo'])) {
     $image_path = "";
-    if (isset($_FILES['promo_img']) && $_FILES['promo_img']['error'] == 0) {
-        $ext = pathinfo($_FILES['promo_img']['name'], PATHINFO_EXTENSION);
-        $new_name = "pro_" . uniqid() . "." . $ext;
-        move_uploaded_file($_FILES['promo_img']['tmp_name'], "../uploads/" . $new_name);
-        $image_path = "uploads/" . $new_name;
+    if (isset($_FILES['promo_img'])) {
+        $upload_result = SecureUpload::uploadImage($_FILES['promo_img'], '../uploads/', 'promo');
+        
+        if ($upload_result['success']) {
+            // แก้ไข: ตัด ../ ออกเพื่อให้ path ถูกต้อง
+            $image_path = str_replace('../', '', $upload_result['path']);
+        } else {
+            echo "<script>alert('ข้อผิดพลาดในการอัปโหลดรูป: {$upload_result['error']}'); history.back();</script>";
+            exit();
+        }
     }
     $pdo->prepare("INSERT INTO promotions (title, details, image_url) VALUES (?, ?, ?)")->execute([$_POST['title'], $_POST['details'], $image_path]);
     header("Location: manage_promotions.php");
+    exit();
 }
+
+// แก้ไขโปรโมชั่น
+if (isset($_POST['edit_promo'])) {
+    $id = $_POST['promo_id'];
+    $title = $_POST['title'];
+    $details = $_POST['details'];
+    
+    // ดึงรูปเก่า
+    $stmt = $pdo->prepare("SELECT image_url FROM promotions WHERE id = ?");
+    $stmt->execute([$id]);
+    $old_promo = $stmt->fetch();
+    $image_path = $old_promo['image_url'];
+    
+    // ถ้ามีรูปใหม่
+    if (isset($_FILES['promo_img']) && $_FILES['promo_img']['error'] == 0) {
+        $upload_result = SecureUpload::uploadImage($_FILES['promo_img'], '../uploads/', 'promo');
+        
+        if ($upload_result['success']) {
+            $image_path = str_replace('../', '', $upload_result['path']);
+            
+            // ลบรูปเก่า (ถ้ามี)
+            if ($old_promo['image_url'] && file_exists('../' . $old_promo['image_url'])) {
+                unlink('../' . $old_promo['image_url']);
+            }
+        }
+    }
+    
+    $pdo->prepare("UPDATE promotions SET title = ?, details = ?, image_url = ? WHERE id = ?")
+        ->execute([$title, $details, $image_path, $id]);
+    header("Location: manage_promotions.php");
+    exit();
+}
+
+// ลบโปรโมชั่น
 if (isset($_GET['delete'])) {
+    $stmt = $pdo->prepare("SELECT image_url FROM promotions WHERE id = ?");
+    $stmt->execute([$_GET['delete']]);
+    $promo = $stmt->fetch();
+    
+    // ลบรูป
+    if ($promo && $promo['image_url'] && file_exists('../' . $promo['image_url'])) {
+        unlink('../' . $promo['image_url']);
+    }
+    
     $pdo->prepare("DELETE FROM promotions WHERE id = ?")->execute([$_GET['delete']]);
     header("Location: manage_promotions.php");
+    exit();
 }
 ?>
 <!DOCTYPE html>
@@ -208,6 +261,71 @@ if (isset($_GET['delete'])) {
         .upload-box input[type="file"] {
              display: none;
         }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: white;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            color: #2c3e50;
+        }
+
+        .close-btn {
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #999;
+            background: none;
+            border: none;
+        }
+
+        .close-btn:hover {
+            color: #e74c3c;
+        }
+
+        .btn-edit {
+            background: #f39c12;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+
+        .btn-edit:hover {
+            background: #e67e22;
+        }
     </style>
 </head>
 
@@ -229,14 +347,24 @@ if (isset($_GET['delete'])) {
                         $img = $row['image_url'] ? "../" . $row['image_url'] : "https://via.placeholder.com/80";
                     ?>
                         <div class="promo-item">
-                            <img src="<?= $img ?>" class="promo-img">
+                            <img src="<?= $img ?>" class="promo-img" onerror="this.src='https://via.placeholder.com/100'">
                             <div style="flex:1;">
-                                <h4 style="margin:0 0 5px; font-size:1.1rem; color:#333;"><?= $row['title'] ?></h4>
-                                <p style="margin:0; color:#666; font-size:0.9rem; line-height:1.5;"><?= $row['details'] ?></p>
+                                <h4 style="margin:0 0 5px; font-size:1.1rem; color:#333;"><?= htmlspecialchars($row['title'], ENT_QUOTES, 'UTF-8') ?></h4>
+                                <p style="margin:0; color:#666; font-size:0.9rem; line-height:1.5;"><?= htmlspecialchars($row['details'], ENT_QUOTES, 'UTF-8') ?></p>
                             </div>
-                            <a href="?delete=<?= $row['id'] ?>" onclick="return confirm('ยืนยันการลบ?')" style="color:#e74c3c; align-self:center; padding:10px;">
-                                <i class="fas fa-trash-alt fa-lg"></i>
-                            </a>
+                            <div style="display:flex; gap:5px; align-self:center;">
+                                <button onclick='openEditModal(<?= json_encode([
+                                    "id" => $row["id"],
+                                    "title" => $row["title"],
+                                    "details" => $row["details"],
+                                    "img" => $img
+                                ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' class="btn-edit" title="แก้ไข">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <a href="?delete=<?= $row['id'] ?>" onclick="return confirm('ยืนยันการลบ?')" style="color:#e74c3c; padding:8px 15px; background:#ffe6e6; border-radius:5px;" title="ลบ">
+                                    <i class="fas fa-trash-alt"></i>
+                                </a>
+                            </div>
                         </div>
                     <?php endwhile; ?>
                 </div>
@@ -266,6 +394,35 @@ if (isset($_GET['delete'])) {
         </div>
     </div>
 
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> แก้ไขโปรโมชั่น</h3>
+                <button class="close-btn" onclick="closeEditModal()">&times;</button>
+            </div>
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="promo_id" id="edit_promo_id">
+                
+                <label>หัวข้อโปรโมชั่น</label>
+                <input type="text" name="title" id="edit_title" required>
+                
+                <label>รายละเอียด</label>
+                <textarea name="details" id="edit_details" rows="5"></textarea>
+                
+                <label>รูปภาพปก (เว้นว่างถ้าไม่ต้องการเปลี่ยน)</label>
+                <label class="upload-box" for="edit_promo_img">
+                    <input type="file" name="promo_img" id="edit_promo_img" accept="image/*" onchange="previewEditImage(this)">
+                    <i class="fas fa-image"></i>
+                    <span>คลิกเลือกรูปใหม่ (ถ้าต้องการเปลี่ยน)</span>
+                    <img id="edit_preview" src="#" alt="Preview">
+                </label>
+
+                <button type="submit" name="edit_promo" class="btn">บันทึกการแก้ไข</button>
+            </form>
+        </div>
+    </div>
+
     <script>
         function previewImage(input) {
             if (input.files && input.files[0]) {
@@ -277,6 +434,51 @@ if (isset($_GET['delete'])) {
                     document.querySelector('.upload-box span').style.display = 'none';
                 }
                 reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function previewEditImage(input) {
+            if (input.files && input.files[0]) {
+                var reader = new FileReader();
+                reader.onload = function (e) {
+                    document.getElementById('edit_preview').src = e.target.result;
+                    document.getElementById('edit_preview').style.display = 'block';
+                    document.querySelector('#editModal .upload-box i').style.display = 'none';
+                    document.querySelector('#editModal .upload-box span').style.display = 'none';
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function openEditModal(data) {
+            document.getElementById('edit_promo_id').value = data.id;
+            document.getElementById('edit_title').value = data.title;
+            document.getElementById('edit_details').value = data.details;
+            
+            // แสดงรูปเดิม
+            document.getElementById('edit_preview').src = data.img;
+            document.getElementById('edit_preview').style.display = 'block';
+            document.querySelector('#editModal .upload-box i').style.display = 'none';
+            document.querySelector('#editModal .upload-box span').style.display = 'none';
+            
+            document.getElementById('editModal').style.display = 'flex';
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+            
+            // Reset form
+            document.getElementById('edit_preview').style.display = 'none';
+            document.querySelector('#editModal .upload-box i').style.display = 'block';
+            document.querySelector('#editModal .upload-box span').style.display = 'block';
+            document.getElementById('edit_promo_img').value = '';
+        }
+
+        // ปิด modal เมื่อคลิกข้างนอก
+        window.onclick = function(event) {
+            var modal = document.getElementById('editModal');
+            if (event.target == modal) {
+                closeEditModal();
             }
         }
     </script>

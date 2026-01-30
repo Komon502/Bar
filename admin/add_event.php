@@ -1,5 +1,7 @@
 <?php
 require '../db.php';
+require '../upload_helper.php';
+
 if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') {
     header("Location: ../login.php");
     exit();
@@ -12,11 +14,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $price = $_POST['ticket_price'];
 
     $image_path = "";
-    if (isset($_FILES['event_image']) && $_FILES['event_image']['error'] == 0) {
-        $target_dir = "../uploads/";
-        $filename = uniqid() . "_" . basename($_FILES["event_image"]["name"]);
-        if (move_uploaded_file($_FILES["event_image"]["tmp_name"], $target_dir . $filename)) {
-            $image_path = "uploads/" . $filename;
+    if (isset($_FILES['event_image'])) {
+        $upload_result = SecureUpload::uploadImage($_FILES['event_image'], '../uploads/', 'evt');
+        
+        if ($upload_result['success']) {
+            $image_path = $upload_result['path'];
+        } else {
+            echo "<script>alert('ข้อผิดพลาดในการอัปโหลดรูป: {$upload_result['error']}'); history.back();</script>";
+            exit();
         }
     }
 

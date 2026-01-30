@@ -17,6 +17,7 @@ $revenue = $revStmt->fetch()['total'] ?? 0;
 
 $pendingCount = $pdo->query("SELECT count(*) FROM bookings WHERE status = 'pending'")->fetchColumn();
 $eventCount = $pdo->query("SELECT count(*) FROM events")->fetchColumn();
+$pendingTableCount = $pdo->query("SELECT count(*) FROM reservations WHERE status = 'pending'")->fetchColumn();
 ?>
 
 <!DOCTYPE html>
@@ -171,6 +172,13 @@ $eventCount = $pdo->query("SELECT count(*) FROM events")->fetchColumn();
                     </div>
                     <div class="stat-icon"><i class="fas fa-clock" style="color:#f39c12;"></i></div>
                 </div>
+                <div class="stat-card" style="border-left: 5px solid #9b59b6;">
+                    <div class="stat-info">
+                        <h3>จองโต๊ะค้างตรวจสอบ</h3>
+                        <div class="number" style="color:#9b59b6;"><?= $pendingTableCount ?> โต๊ะ</div>
+                    </div>
+                    <div class="stat-icon"><i class="fas fa-calendar-check" style="color:#9b59b6;"></i></div>
+                </div>
             </div>
 
             <div class="table-container">
@@ -187,17 +195,19 @@ $eventCount = $pdo->query("SELECT count(*) FROM events")->fetchColumn();
                     </thead>
                     <tbody>
                         <?php
+                        require '../csrf_helper.php';
                         $stmt = $pdo->query("SELECT * FROM bookings WHERE status = 'pending' ORDER BY id DESC LIMIT 5");
                         if ($stmt->rowCount() == 0) {
                             echo "<tr><td colspan='5' style='text-align:center; padding:30px; color:#aaa;'>ไม่มีรายการค้างตรวจสอบ</td></tr>";
                         } else {
                             while ($row = $stmt->fetch()) {
+                                $csrf_token = CSRF::generateToken();
                                 echo "<tr>";
                                 echo "<td>#{$row['id']}</td>";
-                                echo "<td><strong>{$row['customer_name']}</strong><br><small>{$row['customer_phone']}</small></td>";
+                                echo "<td><strong>" . htmlspecialchars($row['customer_name'], ENT_QUOTES, 'UTF-8') . "</strong><br><small>" . htmlspecialchars($row['customer_phone'], ENT_QUOTES, 'UTF-8') . "</small></td>";
                                 echo "<td>฿" . number_format($row['total_price']) . "</td>";
-                                echo "<td><a href='../{$row['payment_slip']}' target='_blank' style='color:#3498db;'>ดูสลิป</a></td>";
-                                echo "<td><a href='verify_action.php?id={$row['id']}&action=approve' class='btn-check'>อนุมัติ</a></td>";
+                                echo "<td><a href='../" . htmlspecialchars($row['payment_slip'], ENT_QUOTES, 'UTF-8') . "' target='_blank' style='color:#3498db;'>ดูสลิป</a></td>";
+                                echo "<td><a href='verify_action.php?id={$row['id']}&action=approve&csrf_token={$csrf_token}' class='btn-check' onclick='return confirm(\"ยืนยันการอนุมัติ?\")'>อนุมัติ</a></td>";
                                 echo "</tr>";
                             }
                         }
